@@ -1,5 +1,9 @@
-import { createApp } from "./app.js";
+// db/connection.js must be imported first: it applies a DNS-resolver fix
+// (see the comment there) that has to run before anything else — including
+// app.js, which pulls in connect-mongo's session store, and that connects
+// to MongoDB eagerly at import time.
 import { connectDb } from "./db/connection.js";
+import { createApp } from "./app.js";
 import { config } from "./config/env.js";
 
 async function main() {
