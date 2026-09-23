@@ -2,13 +2,13 @@
 
 Turns a pasted job description + company URL into a structured interview prep kit — company brief, role breakdown, categorized question bank, flashcards, and a day-by-day schedule — built through a sequenced retrieval → extraction → generation → coverage-check pipeline.
 
-**Status: backend complete, frontend in progress.** This README covers what's built so far; sections that depend on the frontend/deployment are marked accordingly and will be filled in as that work lands.
+**Status: backend and frontend both built; not yet deployed.** This README will get a final deployment section once that lands.
 
 ## Tech stack
 
 - **Backend:** Node.js + Express + TypeScript
-- **Database:** MongoDB (Mongoose)
-- **Frontend:** Next.js + Tailwind CSS (in progress)
+- **Database:** MongoDB (Mongoose, Atlas free tier)
+- **Frontend:** Next.js (App Router) + TypeScript + Tailwind CSS + TanStack Query
 - **LLM:** OpenAI (see "Known limitations" — this is a deliberate deviation from the brief's "genuine free tier" requirement, mitigated by a provider-agnostic interface)
 - **Search:** Tavily (public discussion of a company's interview process)
 - **Monorepo:** npm workspaces (`apps/api`, `apps/web`, `packages/shared`)
@@ -18,12 +18,16 @@ Turns a pasted job description + company URL into a structured interview prep ki
 ```bash
 npm install
 cp apps/api/.env.example apps/api/.env   # fill in the values described below
-npm run dev:api                          # starts the Express API on :4000
+cp apps/web/.env.example apps/web/.env.local
+npm run dev:api                          # Express API on :4000
+npm run dev --workspace apps/web         # Next.js on :3000
 ```
 
-Requires a running MongoDB instance — `MONGODB_URI` in `.env` can point at a local `mongod`, a local Docker container, or an Atlas free-tier cluster.
+Requires a running MongoDB instance — `MONGODB_URI` in `apps/api/.env` can point at a local `mongod`, a local Docker container, or an Atlas free-tier cluster (what this project actually runs against).
 
-### Environment variables (`apps/api/.env.example`)
+### Environment variables
+
+**`apps/api/.env`** (see `apps/api/.env.example`):
 
 | Variable | Purpose |
 |---|---|
@@ -35,7 +39,11 @@ Requires a running MongoDB instance — `MONGODB_URI` in `.env` can point at a l
 | `TAVILY_API_KEY` | Public-discussion search |
 | `USE_JEV_CLASSIFIER`, `JEV_API_KEY` | Optional page classifier upgrade — see below, never required |
 | `ALLOW_LOCAL_HOSTS` | SSRF guard override for local dev; the batch CLI always allows local hosts regardless of this flag (see Section 9 of the brief) |
+| `FRONTEND_ORIGIN` | Allowed CORS origin for the session cookie (`http://localhost:3000` in dev) |
 | `MAX_CRAWL_PAGES`, `MAX_COVERAGE_PASSES`, `BATCH_CONCURRENCY` | Pipeline tuning |
+| `MAX_CONCURRENT_GENERATIONS` | Caps how many kit pipelines the live app runs at once (single-create or bulk-upload) — protects the LLM rate limit the same way `BATCH_CONCURRENCY` does for the CLI |
+
+**`apps/web/.env.local`** (see `apps/web/.env.example`): just `NEXT_PUBLIC_API_URL`, the Express API's base URL. No secrets belong on the frontend — the LLM/search/DB credentials stay backend-only.
 
 ### Batch entry point
 
@@ -59,7 +67,13 @@ apps/api/src/
   models/      Mongoose schemas (User, Kit)
   batch/       the `evaluate` CLI entry point
 packages/shared/   the Appendix A kit shape + Appendix B batch shape as zod schemas (single
-                    source of truth, imported by both the API and — later — the frontend)
+                    source of truth, imported by both the API and the frontend)
+apps/web/
+  app/         routes: /, /login, /register, /kits, /kits/new, /kits/[id], /kits/[id]/practice
+  components/  auth/ (AuthForm, AuthGuard), kits/ (dashboard + creation), builder/ (the editable
+               kit sections), practice/ (flashcard flow), ui/ (small shared primitives)
+  lib/         api.ts (fetch client), queries.ts (TanStack Query hooks incl. optimistic edits),
+               types.ts (re-exports @aik/shared's Kit type, plus frontend-only response shapes)
 ```
 
 ### Retrieval approach and sources used
@@ -105,11 +119,23 @@ A confidence-weighted sort (Section 7 explicitly allows this over a full spaced-
 
 Generation runs in-process (no external queue — not reliable on free-tier hosting) and persists progress after every pipeline step to `Kit.generation.steps`, polled via `GET /kits/:id/status`. A failure partway through a step is caught at that step's boundary; most steps degrade gracefully (an unreachable company site → thinner brief, not a failed run) rather than aborting. Only a failure to extract requirements at all — the one input every other step depends on — fails the whole kit, because at that point there is nothing meaningful left to build.
 
+## Frontend
+
+**Auth is checked client-side, not via Next.js middleware.** The backend and frontend run on separate origins, so the session cookie belongs to the API's domain and Next's server-side middleware (running on the frontend's own domain) never sees it. `AuthGuard` wraps every protected page and checks a client-side `/auth/me` query instead; a global 401 handler (`lib/api.ts`'s `onUnauthorized`) redirects to `/login` from anywhere a session expires mid-session.
+
+**Reordering uses up/down buttons and a category dropdown, not drag-and-drop.** The brief requires reordering questions and moving one between categories — not drag-and-drop specifically. Buttons and a `<select>` satisfy both exactly, are trivially keyboard-accessible with no custom sensor/collision-detection code, and behave identically on mobile without touch-drag tuning.
+
+**Edits feel immediate via optimistic updates**, not by round-tripping on every keystroke: editing/reordering/deleting a question or flashcard updates the local TanStack Query cache the instant you act, with the real request following in the background and a rollback if it fails (`lib/queries.ts`). Text edits (prompt, answer outline, company brief) apply on explicit Save rather than per-keystroke, which is both faster-feeling and avoids firing a request per character.
+
+**Bulk upload → `POST /kits/bulk`.** "Prepare for more than one role at once by uploading a file" needed one small backend addition: an endpoint that validates each `{jd, company_url, days}` entry independently (one bad entry doesn't block the rest), creates a `Kit` doc per valid entry through the same `createKitForUser`/`startGeneration` path a single kit uses, and returns per-case results. Generation across an upload is capped by `MAX_CONCURRENT_GENERATIONS`, same as a single create.
+
 ## Known limitations
 
 - **LLM provider (OpenAI) does not have an ongoing free tier**, contrary to the brief's "genuine free tier" requirement — this was a deliberate choice made with an existing funded credit balance in mind. The LLM client is behind a provider-agnostic interface (`llm/client.ts`, `llm/providers/`) specifically so this is a one-file + one-env-var swap to the working Gemini free-tier implementation already included (`LLM_PROVIDER=gemini`), not a rewrite, if a genuinely free run is needed.
 - **Jev AI page classifier is optional and best-effort.** It's a newly released (Sept 2026), non-free model; it is never load-bearing — `USE_JEV_CLASSIFIER` defaults off, and any failure (missing key, bad response, timeout) falls straight back to the zero-cost heuristic classifier that the crawler actually depends on.
-- Company-site crawling goes two levels deep from the homepage, capped at `MAX_CRAWL_PAGES` total fetches — deep enough to reliably find a careers page and one hop past it (e.g. a linked hiring-process/handbook page), bounded to stay well inside the batch command's 15-minute budget for 5 cases.
+- Company-site crawling goes two levels deep from the homepage, capped at `MAX_CRAWL_PAGES` total fetches — deep enough to reliably find a careers page and one hop past it (e.g. a linked hiring-process/handbook page), bounded to stay well inside the batch command's 15-minute budget for 5 cases. Confirmed on a real 5-case run against GitLab, PostHog, a local test site, a thin-JD case, and an unreachable URL: 5/5 `ok`, 0 failed, total wall time ~62 seconds.
+- No automated frontend tests, and no browser-automation tool was available in the build environment to visually QA the UI — the frontend was verified by full production builds (`next build`, which type-checks and statically compiles every route), and by pulling real JSON from the live backend and diffing it field-by-field against what the frontend's types/queries expect, including a real CORS preflight check for the cross-origin PATCH/DELETE calls the builder makes. Actual in-browser interaction (drag-free reordering, optimistic-update feel, responsive layout, keyboard traversal) has not been visually confirmed and is worth a manual pass before submission.
+- For a company with no real public footprint (e.g. an unreachable/placeholder URL), Tavily's search can still return loosely-related real-world content that the model leans on a bit more than ideal for the brief — still hedged rather than stated as fact, but worth knowing as a soft edge on "no public discussion found."
 
 ## Edge cases (Section 10)
 
