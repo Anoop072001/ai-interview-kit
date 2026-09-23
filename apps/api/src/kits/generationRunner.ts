@@ -32,6 +32,11 @@ export async function startGeneration(
   await KitModel.findByIdAndUpdate(kitId, { $set: { status: "running" } });
 
   const steps: StepRecord[] = [];
+  // Each progress write fires without blocking the pipeline, but they must
+  // still resolve in order and finish before the final status write —
+  // otherwise the last step or two can lose the race against "status: ok"
+  // and never get persisted, even though the pipeline genuinely ran them.
+  let pendingWrite: Promise<void> = Promise.resolve();
   const onProgress = (name: string, status: StepStatus, message?: string) => {
     const existing = steps.find((s) => s.name === name);
     const now = new Date();
@@ -43,15 +48,17 @@ export async function startGeneration(
     } else {
       steps.push({ name, status, message: message ?? "", startedAt: status === "running" ? now : undefined, finishedAt: status !== "running" ? now : undefined });
     }
-    void persistSteps(kitId, steps);
+    pendingWrite = pendingWrite.then(() => persistSteps(kitId, steps));
   };
 
   try {
     const kit = await runPipeline(input, { allowLocal: false, onProgress });
+    await pendingWrite;
     await KitModel.findByIdAndUpdate(kitId, { $set: { status: "ok", kit, "generation.error": null } });
   } catch (err) {
     const code = err instanceof PipelineFailedError ? err.code : "PIPELINE_ERROR";
     const message = err instanceof Error ? err.message : String(err);
+    await pendingWrite;
     await KitModel.findByIdAndUpdate(kitId, {
       $set: { status: "failed", "generation.error": { code, message } },
     });
