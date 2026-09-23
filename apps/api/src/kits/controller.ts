@@ -35,20 +35,18 @@ async function loadOwnedKit(req: Request, res: Response) {
   return doc;
 }
 
-export async function createKit(req: Request, res: Response) {
-  const parsed = createKitSchema.safeParse(req.body);
-  if (!parsed.success) return badRequest(res, parsed.error.issues[0]?.message ?? "Invalid input");
-  const { jd, companyUrl, days } = parsed.data;
-
-  const userId = req.session.userId!;
+async function createKitForUser(
+  userId: string,
+  input: { jd: string; companyUrl: string; days: number }
+): Promise<{ id: string; status: string; deduplicated: boolean }> {
+  const { jd, companyUrl, days } = input;
   const hash = contentHash([userId, jd, companyUrl]);
 
   const existing = await KitModel.findOne({ userId, contentHash: hash });
   if (existing) {
     // Section 10: the same description + company submitted twice returns
     // the existing kit rather than paying for a second generation run.
-    res.status(200).json({ id: existing.id, status: existing.status, deduplicated: true });
-    return;
+    return { id: existing.id, status: existing.status, deduplicated: true };
   }
 
   const doc = await KitModel.create({
@@ -64,7 +62,53 @@ export async function createKit(req: Request, res: Response) {
 
   void startGeneration(doc.id, { jd, companyUrl, days });
 
-  res.status(202).json({ id: doc.id, status: doc.status });
+  return { id: doc.id, status: doc.status, deduplicated: false };
+}
+
+export async function createKit(req: Request, res: Response) {
+  const parsed = createKitSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.issues[0]?.message ?? "Invalid input");
+
+  const result = await createKitForUser(req.session.userId!, parsed.data);
+  res.status(result.deduplicated ? 200 : 202).json(result);
+}
+
+const bulkCaseSchema = z.object({
+  jd: z.string().trim().min(1),
+  company_url: z.string().trim().url(),
+  days: z.number().int().min(1).max(60),
+});
+
+const bulkCreateSchema = z.object({
+  cases: z.array(z.unknown()).min(1, "At least one case is required").max(50, "At most 50 cases per upload"),
+});
+
+/**
+ * The "prepare for more than one role at once by uploading a file" path
+ * (Section 2). Each case is validated independently and a bad one is
+ * reported rather than failing the whole upload — same principle as the
+ * batch CLI's per-case error handling, just creating real owned Kit docs
+ * (via the same createKitForUser/startGeneration path as a single kit)
+ * instead of writing a result file.
+ */
+export async function createBulkKits(req: Request, res: Response) {
+  const parsed = bulkCreateSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.issues[0]?.message ?? "Invalid input");
+
+  const userId = req.session.userId!;
+  const results = await Promise.all(
+    parsed.data.cases.map(async (raw, index) => {
+      const caseParsed = bulkCaseSchema.safeParse(raw);
+      if (!caseParsed.success) {
+        return { index, id: null, status: "invalid", error: caseParsed.error.issues[0]?.message };
+      }
+      const { jd, company_url: companyUrl, days } = caseParsed.data;
+      const result = await createKitForUser(userId, { jd, companyUrl, days });
+      return { index, id: result.id, status: result.status };
+    })
+  );
+
+  res.status(202).json({ results });
 }
 
 export async function listKits(req: Request, res: Response) {

@@ -30,6 +30,10 @@ const envSchema = z.object({
   MAX_CRAWL_PAGES: z.string().default("8").transform(Number),
   MAX_COVERAGE_PASSES: z.string().default("3").transform(Number),
   BATCH_CONCURRENCY: z.string().default("2").transform(Number),
+  // Caps how many kit pipelines the live app runs at once, regardless of
+  // entry point (single create, bulk upload) — protects the LLM provider's
+  // rate limit the same way BATCH_CONCURRENCY does for the CLI.
+  MAX_CONCURRENT_GENERATIONS: z.string().default("2").transform(Number),
 });
 
 const parsed = envSchema.safeParse(process.env);

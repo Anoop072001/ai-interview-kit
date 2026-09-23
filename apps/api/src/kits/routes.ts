@@ -7,6 +7,7 @@ export const kitsRouter = Router();
 kitsRouter.use(requireAuth);
 
 kitsRouter.post("/", asyncHandler(controller.createKit));
+kitsRouter.post("/bulk", asyncHandler(controller.createBulkKits));
 kitsRouter.get("/", asyncHandler(controller.listKits));
 kitsRouter.get("/:id", asyncHandler(controller.getKit));
 kitsRouter.get("/:id/status", asyncHandler(controller.getKitStatus));

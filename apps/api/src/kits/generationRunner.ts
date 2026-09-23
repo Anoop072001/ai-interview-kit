@@ -1,5 +1,14 @@
+import pLimit from "p-limit";
 import { KitModel } from "../models/Kit.js";
 import { runPipeline, PipelineFailedError, type StepStatus } from "../pipeline/orchestrator.js";
+import { config } from "../config/env.js";
+
+// Shared across every call site (single-kit create, bulk upload) so the live
+// app never runs more pipelines at once than the LLM provider's rate limit
+// can take, regardless of how many kits get queued up close together. A kit
+// waiting for a slot just stays in its initial "pending" status, which
+// already reads correctly as "queued" to the frontend.
+const generationLimit = pLimit(config.MAX_CONCURRENT_GENERATIONS);
 
 interface StepRecord {
   name: string;
@@ -25,7 +34,11 @@ async function persistSteps(kitId: string, steps: StepRecord[]): Promise<void> {
  * progress). Fire-and-forget from the caller's perspective: the HTTP request
  * that creates the kit returns immediately with status "pending".
  */
-export async function startGeneration(
+export function startGeneration(kitId: string, input: { jd: string; companyUrl: string; days: number }): Promise<void> {
+  return generationLimit(() => runGeneration(kitId, input));
+}
+
+async function runGeneration(
   kitId: string,
   input: { jd: string; companyUrl: string; days: number }
 ): Promise<void> {
