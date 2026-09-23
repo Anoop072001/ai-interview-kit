@@ -1,0 +1,17 @@
+{
+  "name": "ai-interview-kit",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "evaluate": "npm run evaluate --workspace apps/api --",
+    "dev:api": "npm run dev --workspace apps/api",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
