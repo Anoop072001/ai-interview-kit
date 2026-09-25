@@ -8,6 +8,16 @@ import { kitsRouter } from "./kits/routes.js";
 export function createApp() {
   const app = express();
 
+  // Render (and Vercel, one hop further out for proxied /api/* requests)
+  // terminates TLS at its own edge and forwards plain HTTP internally, so
+  // without this Express sees every request as insecure — express-session
+  // silently refuses to send Set-Cookie at all when cookie.secure is true
+  // and it can't confirm the connection is actually HTTPS (documented in
+  // express-session's own README). Trusting the first hop is enough: it's
+  // the proxy directly in front of this container, and it always reports
+  // the true origin protocol regardless of what's further upstream.
+  app.set("trust proxy", 1);
+
   app.use(cors({ origin: config.FRONTEND_ORIGIN, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
   app.use(sessionMiddleware);
