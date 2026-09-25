@@ -14,11 +14,8 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
   SESSION_SECRET: z.string().min(1, "SESSION_SECRET is required"),
 
-  LLM_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
   OPENAI_API_KEY: z.string().optional().default(""),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
-  GEMINI_API_KEY: z.string().optional().default(""),
-  GEMINI_MODEL: z.string().default("gemini-1.5-flash"),
 
   TAVILY_API_KEY: z.string().optional().default(""),
 

@@ -1,13 +1,10 @@
 import { z } from "zod";
-import { config } from "../config/env.js";
 import { createOpenAiProvider } from "./providers/openai.js";
-import { createGeminiProvider } from "./providers/gemini.js";
 
 /** A provider's only job: given a system + user prompt, return raw text that
- * is expected (but not guaranteed) to be JSON. Provider-agnostic on purpose —
- * see the README for why the LLM_PROVIDER default (OpenAI) is a known
- * deviation from the brief's "genuine free tier" requirement, and how to
- * swap to the Gemini stub instead. */
+ * is expected (but not guaranteed) to be JSON. Kept as an interface (rather
+ * than calling the OpenAI SDK directly everywhere) purely so it's easy to
+ * swap or mock in tests — OpenAI is the only provider this app uses. */
 export interface LlmProvider {
   completeJSON(system: string, prompt: string): Promise<string>;
 }
@@ -15,9 +12,7 @@ export interface LlmProvider {
 let cachedProvider: LlmProvider | null = null;
 
 export function getLlmProvider(): LlmProvider {
-  if (cachedProvider) return cachedProvider;
-  cachedProvider =
-    config.LLM_PROVIDER === "gemini" ? createGeminiProvider() : createOpenAiProvider();
+  if (!cachedProvider) cachedProvider = createOpenAiProvider();
   return cachedProvider;
 }
 

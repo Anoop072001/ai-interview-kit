@@ -33,9 +33,7 @@ Requires a running MongoDB instance — `MONGODB_URI` in `apps/api/.env` can poi
 |---|---|
 | `MONGODB_URI` | MongoDB connection string |
 | `SESSION_SECRET` | Signs the session cookie |
-| `LLM_PROVIDER` | `openai` (current) or `gemini` (free-tier stub — see below) |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI credentials/model |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | Gemini credentials/model, if `LLM_PROVIDER=gemini` |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI credentials/model — the only LLM provider this app uses |
 | `TAVILY_API_KEY` | Public-discussion search |
 | `USE_JEV_CLASSIFIER`, `JEV_API_KEY` | Optional page classifier upgrade — see below, never required |
 | `ALLOW_LOCAL_HOSTS` | SSRF guard override for local dev; the batch CLI always allows local hosts regardless of this flag (see Section 9 of the brief) |
@@ -60,7 +58,7 @@ apps/api/src/
   auth/        registration/login/logout, session middleware
   retrieval/   URL validation (SSRF guard), robots.txt, page fetching, HTML cleaning,
                site crawling, page classification, public-discussion search
-  llm/         provider-agnostic client (OpenAI now, Gemini stub) + JSON-schema validation/repair
+  llm/         OpenAI client + JSON-schema validation/repair
   pipeline/    the sequenced steps (extraction, brief, questions, flashcards, coverage,
                schedule) + the orchestrator that sequences them + section regeneration
   kits/        REST routes, per-item edit/reorder service, practice-mode ordering
@@ -131,7 +129,7 @@ Generation runs in-process (no external queue — not reliable on free-tier host
 
 ## Known limitations
 
-- **LLM provider (OpenAI) does not have an ongoing free tier**, contrary to the brief's "genuine free tier" requirement — this was a deliberate choice made with an existing funded credit balance in mind. The LLM client is behind a provider-agnostic interface (`llm/client.ts`, `llm/providers/`) specifically so this is a one-file + one-env-var swap to the working Gemini free-tier implementation already included (`LLM_PROVIDER=gemini`), not a rewrite, if a genuinely free run is needed.
+- **LLM provider is OpenAI only, which does not have an ongoing free tier**, contrary to the brief's "genuine free tier" requirement — a deliberate choice made with an existing funded credit balance in mind. An earlier version of this project kept a provider-agnostic interface with a working Gemini (free-tier) implementation behind it specifically to make this swappable; that's been simplified away since the decision to commit to OpenAI is final, but `llm/client.ts` still isolates the OpenAI SDK behind a small interface, so adding a different provider back is a contained change if it's ever needed.
 - **Jev AI page classifier is optional and best-effort.** It's a newly released (Sept 2026), non-free model; it is never load-bearing — `USE_JEV_CLASSIFIER` defaults off, and any failure (missing key, bad response, timeout) falls straight back to the zero-cost heuristic classifier that the crawler actually depends on.
 - Company-site crawling goes two levels deep from the homepage, capped at `MAX_CRAWL_PAGES` total fetches — deep enough to reliably find a careers page and one hop past it (e.g. a linked hiring-process/handbook page), bounded to stay well inside the batch command's 15-minute budget for 5 cases. Confirmed on a real 5-case run against GitLab, PostHog, a local test site, a thin-JD case, and an unreachable URL: 5/5 `ok`, 0 failed, total wall time ~62 seconds.
 - No automated frontend tests, and no browser-automation tool was available in the build environment to visually QA the UI — the frontend was verified by full production builds (`next build`, which type-checks and statically compiles every route), and by pulling real JSON from the live backend and diffing it field-by-field against what the frontend's types/queries expect, including a real CORS preflight check for the cross-origin PATCH/DELETE calls the builder makes. Actual in-browser interaction (drag-free reordering, optimistic-update feel, responsive layout, keyboard traversal) has not been visually confirmed and is worth a manual pass before submission.
