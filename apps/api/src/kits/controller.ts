@@ -150,6 +150,13 @@ export async function getKitStatus(req: Request, res: Response) {
   res.json({ id: doc.id, status: doc.status, generation: doc.generation });
 }
 
+export async function deleteKit(req: Request, res: Response) {
+  const doc = await loadOwnedKit(req, res);
+  if (!doc) return;
+  await doc.deleteOne();
+  res.status(204).end();
+}
+
 const sectionSchema = z.union([questionCategorySchema, z.literal("company_brief"), z.literal("flashcards"), z.literal("schedule")]);
 
 export async function regenerate(req: Request, res: Response) {

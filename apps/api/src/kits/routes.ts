@@ -11,6 +11,7 @@ kitsRouter.post("/bulk", asyncHandler(controller.createBulkKits));
 kitsRouter.get("/", asyncHandler(controller.listKits));
 kitsRouter.get("/:id", asyncHandler(controller.getKit));
 kitsRouter.get("/:id/status", asyncHandler(controller.getKitStatus));
+kitsRouter.delete("/:id", asyncHandler(controller.deleteKit));
 kitsRouter.post("/:id/regenerate", asyncHandler(controller.regenerate));
 
 kitsRouter.patch("/:id/company-brief", asyncHandler(controller.editCompanyBrief));

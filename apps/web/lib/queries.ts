@@ -72,6 +72,24 @@ export function useCreateKit() {
   });
 }
 
+export function useDeleteKit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/kits/${id}`),
+    onMutate: async (id) => {
+      const snapshot = qc.getQueryData<{ kits: KitSummary[] }>(["kits"]);
+      qc.setQueryData<{ kits: KitSummary[] }>(["kits"], (data) =>
+        data ? { kits: data.kits.filter((k) => k.id !== id) } : data
+      );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) qc.setQueryData(["kits"], ctx.snapshot);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["kits"] }),
+  });
+}
+
 export function useBulkCreateKits() {
   const qc = useQueryClient();
   return useMutation({
