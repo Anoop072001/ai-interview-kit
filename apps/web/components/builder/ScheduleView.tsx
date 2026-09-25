@@ -32,9 +32,7 @@ export function ScheduleView({ kitId, kit }: { kitId: string; kit: Kit }) {
             {day.question_ids.length > 0 && (
               <ul className="mt-2 flex flex-col gap-1 text-sm text-slate-600">
                 {day.question_ids.map((id) => (
-                  <li key={id} className="truncate">
-                    · {questionById.get(id)?.prompt ?? id}
-                  </li>
+                  <li key={id}>· {questionById.get(id)?.prompt ?? id}</li>
                 ))}
               </ul>
             )}
