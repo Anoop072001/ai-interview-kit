@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // @aik/shared ships TS source (no build step) — Next doesn't transpile
-  // TS from workspace packages under node_modules unless told to.
+  // @aik/shared is a workspace package (pre-compiled to plain JS via its
+  // own build step) — kept in transpilePackages so Next processes it
+  // through its own pipeline rather than treating it as opaque node_modules.
   transpilePackages: ["@aik/shared"],
 };
 
