@@ -5,9 +5,14 @@
 import { connectDb } from "./db/connection.js";
 import { createApp } from "./app.js";
 import { config } from "./config/env.js";
+import { recoverOrphanedGenerations } from "./kits/generationRunner.js";
 
 async function main() {
   await connectDb();
+  const recovered = await recoverOrphanedGenerations();
+  if (recovered > 0) {
+    console.log(`Marked ${recovered} orphaned generation(s) as failed after restart`);
+  }
   const app = createApp();
   app.listen(config.PORT, () => {
     console.log(`API listening on :${config.PORT}`);

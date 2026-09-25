@@ -38,6 +38,34 @@ export function startGeneration(kitId: string, input: { jd: string; companyUrl: 
   return generationLimit(() => runGeneration(kitId, input));
 }
 
+/**
+ * Generation only ever exists as an in-process, fire-and-forget job with no
+ * persistent queue — a deliberate simplicity trade-off (Section 13 asks what
+ * happens when generation "fails halfway," and a server restart mid-run is
+ * exactly that case, just triggered by infrastructure instead of a provider
+ * error). Any kit still "pending" or "running" at the moment the server
+ * boots can only mean the process that was going to finish it is gone —
+ * there is no other code path that leaves a kit in either state. Sweeping
+ * these on startup turns a silently-frozen "Generating…" screen into an
+ * honest, visible failure the user can act on (retry) instead of a hang
+ * with no error and no way out.
+ */
+export async function recoverOrphanedGenerations(): Promise<number> {
+  const result = await KitModel.updateMany(
+    { status: { $in: ["pending", "running"] } },
+    {
+      $set: {
+        status: "failed",
+        "generation.error": {
+          code: "INTERRUPTED",
+          message: "Generation was interrupted by a server restart. Please try creating this kit again.",
+        },
+      },
+    }
+  );
+  return result.modifiedCount;
+}
+
 async function runGeneration(
   kitId: string,
   input: { jd: string; companyUrl: string; days: number }
