@@ -6,6 +6,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "npm run build --workspace packages/shared",
     "evaluate": "npm run evaluate --workspace apps/api --",
     "dev:api": "npm run dev --workspace apps/api",
     "build": "npm run build --workspace packages/shared && npm run build --workspaces --if-present",
