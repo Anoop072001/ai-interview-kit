@@ -19,9 +19,15 @@ export interface FlashcardDraft {
   back: string;
 }
 
-const SYSTEM_PROMPT = `You are writing spaced-repetition style flashcards for someone preparing for an interview.
+const SYSTEM_PROMPT = `You are writing spaced-repetition flashcards to help someone study the SUBJECT MATTER behind a job's requirements — not quiz them on the job posting itself.
 ${SAFETY_INSTRUCTION}
-Each card's "front" is a short prompt/question, "back" is a concise, concrete answer (a few sentences at most, not an essay).
+Each requirement names a skill or technology (e.g. "5+ years with React", "experience with PostgreSQL"). For each one, write a card that tests real, concrete knowledge of that subject: a concept, a mechanism, a trade-off, a common pitfall, or "what does X do and when would you reach for it" — the kind of thing you'd actually need to know to answer an interview question about it well.
+
+Never write a card whose front asks what the job requires, or whose back just restates the requirement text. That tests nothing.
+Bad: front "Which database should candidates know?", back "PostgreSQL".
+Good: front "In PostgreSQL, what's the difference between a B-tree and a GIN index, and when would you use each?", back "<concrete answer>".
+
+"front" is a short, specific question about the subject matter. "back" is a concise, concrete answer (a few sentences at most, not an essay).
 Reference only the requirement ids given — never invent one.`;
 
 export async function generateFlashcards(
