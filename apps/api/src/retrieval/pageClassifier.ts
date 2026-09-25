@@ -56,17 +56,22 @@ export class HeuristicPageClassifier implements PageClassifier {
   }
 }
 
+interface SystemOneResponse {
+  answers?: {
+    is_hiring_page?: { type: "noul"; noul: number };
+  };
+}
+
 /**
- * Optional upgrade using Jev (TypeSafe AI's decision-only classifier model,
- * released Sept 2026). Best-effort only: this assessment requires a genuine
+ * Optional upgrade using Jev (TypeSafe AI's decision-only model) via their
+ * "systemone" endpoint. Best-effort only: this assessment requires a genuine
  * free-tier pipeline and Jev is not free, so it is never load-bearing — any
  * failure (missing key, non-2xx, timeout, unexpected response shape) falls
  * straight back to the heuristic classifier below.
  *
- * NOTE: the exact request/response contract here is based on TypeSafe AI's
- * publicly described "category pick" decision type as of Sept 2026, not a
- * verified schema — confirm against https://docs.typesafe.ai/models before
- * depending on this in a context where correctness matters.
+ * Schema confirmed directly against https://docs.typesafe.ai/api and a real
+ * request/response round trip — "noul" questions return a 0-1 score for how
+ * true the criteria's "true" case is, which doubles as our confidence value.
  */
 export class JevPageClassifier implements PageClassifier {
   constructor(
@@ -78,7 +83,7 @@ export class JevPageClassifier implements PageClassifier {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5_000);
-      const res = await fetch("https://api.typesafe.ai/v1/decide", {
+      const res = await fetch("https://api.typesafe.ai/v1/systemone", {
         method: "POST",
         signal: controller.signal,
         headers: {
@@ -86,24 +91,30 @@ export class JevPageClassifier implements PageClassifier {
           authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
-          model: "jev",
-          type: "boolean",
-          question: "Does this webpage describe how the company hires, its careers/jobs page, or its interview process?",
-          context: `URL: ${input.url}\nTitle: ${input.title}\nLink text: ${input.linkText}\nContent: ${input.text.slice(0, 4000)}`,
+          model: "jev-latest",
+          state: `URL: ${input.url}\nTitle: ${input.title}\nLink text: ${input.linkText}\nContent: ${input.text.slice(0, 4000)}`,
+          questions: {
+            is_hiring_page: {
+              type: "noul",
+              instructions:
+                "Does this webpage describe how the company hires, its careers/jobs page, or its interview process?",
+              criteria: {
+                true: "The page is a careers/jobs page, hiring page, or describes the interview process",
+                false: "The page is unrelated to hiring, careers, or interviews",
+              },
+            },
+          },
         }),
       });
       clearTimeout(timeout);
 
       if (!res.ok) return this.fallback.classify(input);
 
-      const data = (await res.json()) as { answer?: boolean; confidence?: number };
-      if (typeof data.answer !== "boolean") return this.fallback.classify(input);
+      const data = (await res.json()) as SystemOneResponse;
+      const noul = data.answers?.is_hiring_page?.noul;
+      if (typeof noul !== "number") return this.fallback.classify(input);
 
-      return {
-        isHiringPage: data.answer,
-        confidence: typeof data.confidence === "number" ? data.confidence : 0.7,
-        source: "jev",
-      };
+      return { isHiringPage: noul >= 0.5, confidence: noul, source: "jev" };
     } catch {
       return this.fallback.classify(input);
     }
