@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+// Always same-origin — next.config.ts rewrites this to the real API so the
+// session cookie is first-party regardless of where the API is hosted.
+const API_BASE = "/api";
 
 export class ApiError extends Error {
   constructor(
